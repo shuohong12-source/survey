@@ -16,6 +16,8 @@
 
 ## 运行方式
 
+网页版：
+
 ```bash
 pip install -r requirements.txt
 python app.py
@@ -28,6 +30,14 @@ http://127.0.0.1:5000
 ```
 
 首次运行会自动创建 `survey.db` 数据库。
+
+桌面 GUI 版：
+
+```bash
+python gui.py
+```
+
+GUI 版使用 Tkinter 编写，和网页版共用同一个 `survey.db` 数据库。
 
 ## 逻辑跳转
 
