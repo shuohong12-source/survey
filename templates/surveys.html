@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}问卷列表{% endblock %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <h1>问卷列表</h1>
+        <p class="muted">管理我的问卷，浏览公开问卷，或使用模板快速创建。</p>
+    </div>
+    <a class="button" href="{{ url_for('new_survey') }}">创建问卷</a>
+</section>
+
+<section class="section">
+    <h2>我的问卷</h2>
+    <div class="grid">
+        {% for survey in mine %}
+            <article class="card">
+                <div class="card-title">
+                    <h3>{{ survey.title }}</h3>
+                    <span class="tag">{{ "已发布" if survey.is_published else "草稿" }}</span>
+                </div>
+                <p>{{ survey.description or "暂无说明" }}</p>
+                <p class="muted">已回收 {{ survey.response_count }} 份</p>
+                <div class="actions wrap">
+                    <a class="button small secondary" href="{{ url_for('edit_survey', survey_id=survey.id) }}">设置</a>
+                    <a class="button small secondary" href="{{ url_for('results', survey_id=survey.id) }}">结果</a>
+                    {% if survey.slug %}
+                        <a class="button small" href="{{ url_for('fill_survey', slug=survey.slug) }}">填写链接</a>
+                    {% endif %}
+                    <form method="post" action="{{ url_for('delete_survey', survey_id=survey.id) }}" onsubmit="return confirm('确定删除这个问卷吗？相关题目、答卷和统计结果也会一并删除。');">
+                        <button class="button small danger" type="submit">删除</button>
+                    </form>
+                </div>
+            </article>
+        {% else %}
+            <p class="muted">还没有创建问卷。</p>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="section">
+    <h2>我的模板</h2>
+    <div class="grid compact">
+        {% for item in templates %}
+            <article class="card">
+                <h3>{{ item.name }}</h3>
+                <p class="muted">{{ item.created_at }}</p>
+                <div class="actions wrap">
+                    <a class="button small" href="{{ url_for('use_template', template_id=item.id) }}">使用模板</a>
+                    <form method="post" action="{{ url_for('delete_template', template_id=item.id) }}" onsubmit="return confirm('确定删除这个模板吗？');">
+                        <button class="button small danger" type="submit">删除</button>
+                    </form>
+                </div>
+            </article>
+        {% else %}
+            <p class="muted">暂无模板，可在问卷设置页保存。</p>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="section">
+    <h2>公开问卷</h2>
+    <div class="grid">
+        {% for survey in public_surveys %}
+            <article class="card">
+                <h3>{{ survey.title }}</h3>
+                <p>{{ survey.description or "暂无说明" }}</p>
+                <p class="muted">发布者：{{ survey.owner_name }}，已回收 {{ survey.response_count }} 份</p>
+                <div class="actions wrap">
+                    <a class="button small" href="{{ url_for('fill_survey', slug=survey.slug) }}">填写</a>
+                    {% if survey.owner_id == g.user.id %}
+                        <form method="post" action="{{ url_for('delete_survey', survey_id=survey.id) }}" onsubmit="return confirm('确定删除这个已发布问卷吗？相关题目、答卷和统计结果也会一并删除。');">
+                            <button class="button small danger" type="submit">删除</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </article>
+        {% else %}
+            <p class="muted">暂无公开问卷。</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

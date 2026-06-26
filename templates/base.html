@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}问卷调查系统{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="{{ url_for('index') }}">问卷调查系统</a>
+        <nav>
+            {% if g.user %}
+                <a href="{{ url_for('surveys') }}">问卷列表</a>
+                <a href="{{ url_for('new_survey') }}">创建问卷</a>
+                <span class="muted">{{ g.user.username }}</span>
+                <a href="{{ url_for('logout') }}">退出</a>
+            {% else %}
+                <a href="{{ url_for('login') }}">登录</a>
+                <a class="button small" href="{{ url_for('register') }}">注册</a>
+            {% endif %}
+        </nav>
+    </header>
+    <main class="container">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <section class="flash">
+                    {% for message in messages %}
+                        <div>{{ message }}</div>
+                    {% endfor %}
+                </section>
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

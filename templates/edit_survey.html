@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}{{ "编辑问卷" if survey else "创建问卷" }}{% endblock %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <h1>{{ "编辑问卷" if survey else "创建问卷" }}</h1>
+        <p class="muted">支持单选题、多选题、填空题，以及按选项跳转到指定题号。</p>
+    </div>
+    {% if survey and survey.slug %}
+        <a class="button" href="{{ url_for('fill_survey', slug=survey.slug) }}">打开填写页</a>
+    {% endif %}
+</section>
+
+<form method="post" action="{{ url_for('edit_survey', survey_id=survey.id) if survey else url_for('new_survey') }}" class="form panel" id="survey-form">
+    <div class="two-col">
+        <label>
+            标题
+            <input name="title" required value="{{ survey.title if survey else (initial.title if initial else '') }}">
+        </label>
+        <label>
+            预计回收数量
+            <input name="target_count" type="number" min="0" value="{{ survey.target_count if survey else (initial.target_count if initial else 0) }}">
+        </label>
+    </div>
+    <label>
+        说明
+        <textarea name="description" rows="3">{{ survey.description if survey else (initial.description if initial else '') }}</textarea>
+    </label>
+    <div class="two-col">
+        <label>
+            开放时间
+            <input name="open_at" type="datetime-local" value="{{ (survey.open_at or '').replace(' ', 'T') if survey else ((initial.open_at or '').replace(' ', 'T') if initial else '') }}">
+        </label>
+        <label>
+            截止时间
+            <input name="close_at" type="datetime-local" value="{{ (survey.close_at or '').replace(' ', 'T') if survey else ((initial.close_at or '').replace(' ', 'T') if initial else '') }}">
+        </label>
+    </div>
+    <div class="checks">
+        <label><input type="checkbox" name="is_public" {% if survey and survey.is_public or not survey and (not initial or initial.is_public) %}checked{% endif %}> 公开问卷</label>
+        <label><input type="checkbox" name="is_anonymous" {% if survey and survey.is_anonymous or initial and initial.is_anonymous %}checked{% endif %}> 匿名投票</label>
+    </div>
+
+    <input type="hidden" name="questions_json" id="questions-json">
+    <section class="builder">
+        <div class="section-head mini">
+            <h2>问题列表</h2>
+            <button class="button small secondary" type="button" onclick="addQuestion()">添加问题</button>
+        </div>
+        <div id="question-list"></div>
+    </section>
+
+    <div class="actions">
+        <button class="button" type="submit">保存</button>
+    </div>
+</form>
+
+{% if survey %}
+    <section class="panel split">
+        <div>
+            <h2>发布与分享</h2>
+            {% if survey.slug %}
+                <p>填写链接：<a href="{{ url_for('fill_survey', slug=survey.slug, _external=True) }}">{{ url_for('fill_survey', slug=survey.slug, _external=True) }}</a></p>
+                <img class="qr" src="{{ url_for('qr_code', slug=survey.slug) }}" alt="问卷二维码">
+            {% else %}
+                <p class="muted">发布后会生成填写链接和二维码。</p>
+            {% endif %}
+        </div>
+        <div class="actions column">
+            <form method="post" action="{{ url_for('publish_survey', survey_id=survey.id) }}">
+                <button class="button" type="submit">发布问卷</button>
+            </form>
+            <form method="post" action="{{ url_for('save_template', survey_id=survey.id) }}" class="inline-form">
+                <input name="template_name" placeholder="模板名称" value="{{ survey.title }}">
+                <button class="button secondary" type="submit">保存为模板</button>
+            </form>
+            <form method="post" action="{{ url_for('delete_survey', survey_id=survey.id) }}" onsubmit="return confirm('确定删除这个问卷吗？相关题目、答卷和统计结果也会一并删除。');">
+                <button class="button danger" type="submit">删除问卷</button>
+            </form>
+        </div>
+    </section>
+{% endif %}
+
+<script>
+const initialQuestions = {{ (question_config if survey else (initial.questions if initial else [])) | tojson }};
+
+function addQuestion(data = {}) {
+    const list = document.getElementById("question-list");
+    const index = list.children.length + 1;
+    const qtype = data.qtype || "single";
+    const options = data.options && data.options.length ? data.options : [{text: "选项 1"}, {text: "选项 2"}];
+    const card = document.createElement("article");
+    card.className = "question-card";
+    card.innerHTML = `
+        <div class="card-title">
+            <h3>问题 ${index}</h3>
+            <button class="button small danger" type="button" onclick="this.closest('.question-card').remove(); renumberQuestions()">移除</button>
+        </div>
+        <label>题目内容<input class="q-content" value="${escapeHtml(data.content || "")}" required></label>
+        <label>题型
+            <select class="q-type" onchange="toggleOptions(this)">
+                <option value="single" ${qtype === "single" ? "selected" : ""}>单选题</option>
+                <option value="multiple" ${qtype === "multiple" ? "selected" : ""}>多选题</option>
+                <option value="text" ${qtype === "text" ? "selected" : ""}>填空题</option>
+            </select>
+        </label>
+        <div class="option-box">
+            <div class="option-head">
+                <span>选项</span>
+                <button class="button small secondary" type="button" onclick="addOption(this)">添加选项</button>
+            </div>
+            <div class="option-list"></div>
+        </div>
+    `;
+    list.appendChild(card);
+    const optionList = card.querySelector(".option-list");
+    options.forEach(option => optionList.insertAdjacentHTML("beforeend", optionTemplate(option)));
+    toggleOptions(card.querySelector(".q-type"));
+}
+
+function optionTemplate(option = {}) {
+    return `
+        <div class="option-row">
+            <input class="q-option-text" value="${escapeHtml(option.text || "")}" placeholder="选项文字">
+            <input class="q-option-jump" value="${escapeHtml(option.jump_to || "")}" placeholder="跳转题号">
+            <button class="button small danger" type="button" onclick="removeOption(this)">删除选项</button>
+        </div>
+    `;
+}
+
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[char]));
+}
+
+function renumberQuestions() {
+    document.querySelectorAll(".question-card h3").forEach((title, idx) => {
+        title.textContent = `问题 ${idx + 1}`;
+    });
+}
+
+function toggleOptions(select) {
+    const box = select.closest(".question-card").querySelector(".option-box");
+    box.style.display = select.value === "text" ? "none" : "grid";
+}
+
+function addOption(button) {
+    const list = button.closest(".option-box").querySelector(".option-list");
+    list.insertAdjacentHTML("beforeend", optionTemplate({text: `选项 ${list.children.length + 1}`}));
+    toggleOptions(button.closest(".question-card").querySelector(".q-type"));
+}
+
+function removeOption(button) {
+    const list = button.closest(".option-list");
+    if (list.children.length <= 1) {
+        button.closest(".option-row").querySelector(".q-option-text").value = "";
+        button.closest(".option-row").querySelector(".q-option-jump").value = "";
+        return;
+    }
+    button.closest(".option-row").remove();
+}
+
+document.getElementById("survey-form").addEventListener("submit", event => {
+    const questions = Array.from(document.querySelectorAll(".question-card")).map(card => {
+        const qtype = card.querySelector(".q-type").value;
+        const rawOptions = Array.from(card.querySelectorAll(".option-row")).map(row => ({
+            text: row.querySelector(".q-option-text").value.trim(),
+            jump_to: row.querySelector(".q-option-jump").value.trim()
+        })).filter(option => option.text);
+        return {
+            content: card.querySelector(".q-content").value.trim(),
+            qtype,
+            options: qtype === "text" ? [] : rawOptions
+        };
+    }).filter(item => item.content);
+    document.getElementById("questions-json").value = JSON.stringify(questions);
+});
+
+if (initialQuestions.length) {
+    initialQuestions.forEach(item => addQuestion(item));
+} else {
+    addQuestion({content: "你对本课程实践的满意度如何？", qtype: "single", options: [{text: "选项 1"}, {text: "选项 2"}]});
+}
+</script>
+{% endblock %}

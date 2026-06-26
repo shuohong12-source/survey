@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}问卷调查系统{% endblock %}
+{% block content %}
+<section class="hero">
+    <div>
+        <h1>问卷调查系统</h1>
+        <p>支持注册登录、创建发布、在线填写、统计图表、模板复用和数据导出。</p>
+        <div class="actions">
+            <a class="button" href="{{ url_for('register') }}">开始使用</a>
+            <a class="button secondary" href="{{ url_for('login') }}">已有账号登录</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <h2>公开问卷</h2>
+    <div class="grid">
+        {% for survey in public_surveys %}
+            <article class="card">
+                <h3>{{ survey.title }}</h3>
+                <p>{{ survey.description or "暂无说明" }}</p>
+                <p class="muted">发布者：{{ survey.owner_name }}</p>
+                <a class="button small" href="{{ url_for('fill_survey', slug=survey.slug) }}">填写</a>
+            </article>
+        {% else %}
+            <p class="muted">暂无公开问卷。</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

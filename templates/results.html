@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}问卷结果{% endblock %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <h1>{{ survey.title }} 的结果</h1>
+        <p class="muted">已回收 {{ response_count }} 份，平均答题时间 {{ avg_duration }} 秒{% if recovery_rate is not none %}，回收率 {{ recovery_rate }}%{% endif %}</p>
+    </div>
+    <div class="actions">
+        <a class="button secondary" href="{{ url_for('export_csv_file', survey_id=survey.id) }}">导出 CSV</a>
+        <a class="button secondary" href="{{ url_for('export_xlsx_file', survey_id=survey.id) }}">导出 Excel</a>
+    </div>
+</section>
+
+{% for item in stats %}
+    <section class="panel result-block">
+        <h2>Q{{ item.question.sort_order }}：{{ item.question.content }}</h2>
+        {% if item.question.qtype == "text" %}
+            <ul class="answer-list">
+                {% for text in item.texts %}
+                    <li>{{ text }}</li>
+                {% else %}
+                    <li class="muted">暂无填空答案。</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <table>
+                <thead>
+                    <tr><th>选项</th><th>票数</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in item.options %}
+                        <tr><td>{{ row.option.content }}</td><td>{{ row.count }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if item.total %}
+                <div class="interactive-chart" data-chart-type="{{ item.chart_type }}" data-chart-id="chart-{{ item.question.id }}">
+                    <div class="chart-toolbar" role="group" aria-label="图表显示方式">
+                        <button class="chart-mode active" type="button" data-mode="count">票数</button>
+                        <button class="chart-mode" type="button" data-mode="percent">百分比</button>
+                    </div>
+                    <div class="chart-stage" id="chart-{{ item.question.id }}"></div>
+                    <div class="chart-tip" hidden></div>
+                </div>
+                <script type="application/json" id="chart-{{ item.question.id }}-data">{{ item.chart_data | tojson }}</script>
+            {% else %}
+                <p class="muted">暂无足够数据生成图表。</p>
+            {% endif %}
+        {% endif %}
+    </section>
+{% endfor %}
+
+<script>
+const chartColors = ["#2563eb", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
+
+function chartValue(row, total, mode) {
+    if (mode === "percent") {
+        return total ? `${Math.round(row.count * 1000 / total) / 10}%` : "0%";
+    }
+    return `${row.count} 票`;
+}
+
+function renderBarChart(container, data, mode) {
+    const total = data.reduce((sum, row) => sum + row.count, 0);
+    const max = Math.max(...data.map(row => row.count), 1);
+    container.innerHTML = `<div class="chart-bars"></div>`;
+    const bars = container.querySelector(".chart-bars");
+    data.forEach((row, index) => {
+        const percent = total ? row.count * 100 / total : 0;
+        const width = mode === "percent" ? percent : row.count * 100 / max;
+        const color = chartColors[index % chartColors.length];
+        bars.insertAdjacentHTML("beforeend", `
+            <div class="chart-bar-row" style="--bar-color:${color}">
+                <div class="chart-bar-label">${escapeHtml(row.label)}</div>
+                <div class="chart-bar-track" title="${escapeHtml(row.label)}：${row.count} 票，${Math.round(percent * 10) / 10}%">
+                    <div class="chart-bar-fill" style="width:${width}%"></div>
+                </div>
+                <div class="chart-bar-value">${chartValue(row, total, mode)}</div>
+            </div>
+        `);
+    });
+}
+
+function renderDonutChart(container, data, mode) {
+    const total = data.reduce((sum, row) => sum + row.count, 0);
+    let offset = 25;
+    const radius = 86;
+    const circumference = 2 * Math.PI * radius;
+    const segments = data.map((row, index) => {
+        const part = total ? row.count / total : 0;
+        const dash = part * circumference;
+        const gap = circumference - dash;
+        const color = chartColors[index % chartColors.length];
+        const percent = total ? row.count * 100 / total : 0;
+        const segment = `
+            <circle class="donut-segment" r="${radius}" cx="110" cy="110"
+                stroke="${color}" stroke-dasharray="${dash} ${gap}"
+                stroke-dashoffset="${offset}"
+                data-label="${escapeHtml(row.label)}"
+                data-value="${row.count} 票，${Math.round(percent * 10) / 10}%"></circle>
+        `;
+        offset -= dash;
+        return segment;
+    }).join("");
+    const legend = data.map((row, index) => `
+        <div class="chart-legend-item">
+            <span style="--legend-color:${chartColors[index % chartColors.length]}"></span>
+            <strong>${escapeHtml(row.label)}</strong>
+            <em>${chartValue(row, total, mode)}</em>
+        </div>
+    `).join("");
+    container.innerHTML = `
+        <div class="donut-wrap">
+            <svg class="donut-chart" viewBox="0 0 220 220" role="img" aria-label="选项占比图">
+                <circle class="donut-bg" r="${radius}" cx="110" cy="110"></circle>
+                ${segments}
+            </svg>
+            <div class="donut-center"><strong>${total}</strong><span>总票数</span></div>
+        </div>
+        <div class="chart-legend">${legend}</div>
+    `;
+}
+
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[char]));
+}
+
+document.querySelectorAll(".interactive-chart").forEach(chart => {
+    const stage = chart.querySelector(".chart-stage");
+    const type = chart.dataset.chartType;
+    const data = JSON.parse(document.getElementById(`${chart.dataset.chartId}-data`).textContent);
+    const render = mode => type === "donut" ? renderDonutChart(stage, data, mode) : renderBarChart(stage, data, mode);
+    render("count");
+    chart.querySelectorAll(".chart-mode").forEach(button => {
+        button.addEventListener("click", () => {
+            chart.querySelectorAll(".chart-mode").forEach(item => item.classList.remove("active"));
+            button.classList.add("active");
+            render(button.dataset.mode);
+        });
+    });
+});
+</script>
+{% endblock %}
