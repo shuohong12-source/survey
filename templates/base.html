@@ -12,7 +12,7 @@
         <nav>
             {% if g.user %}
                 <a href="{{ url_for('surveys') }}">问卷列表</a>
-                <a href="{{ url_for('new_survey') }}">创建问卷</a>
+                <a href="{{ url_for('NewSurvey') }}">创建问卷</a>
                 <span class="muted">{{ g.user.username }}</span>
                 <a href="{{ url_for('logout') }}">退出</a>
             {% else %}

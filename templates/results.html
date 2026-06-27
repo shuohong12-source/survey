@@ -4,11 +4,11 @@
 <section class="section-head">
     <div>
         <h1>{{ survey.title }} 的结果</h1>
-        <p class="muted">已回收 {{ response_count }} 份，平均答题时间 {{ avg_duration }} 秒{% if recovery_rate is not none %}，回收率 {{ recovery_rate }}%{% endif %}</p>
+        <p class="muted">已回收 {{ ResponseCount }} 份，平均答题时间 {{ AvgDuration }} 秒{% if RecoveryRate is not none %}，回收率 {{ RecoveryRate }}%{% endif %}</p>
     </div>
     <div class="actions">
-        <a class="button secondary" href="{{ url_for('export_csv_file', survey_id=survey.id) }}">导出 CSV</a>
-        <a class="button secondary" href="{{ url_for('export_xlsx_file', survey_id=survey.id) }}">导出 Excel</a>
+        <a class="button secondary" href="{{ url_for('ExportCsvFile', SurveyId=survey.id) }}">导出 CSV</a>
+        <a class="button secondary" href="{{ url_for('ExportXlsxFile', SurveyId=survey.id) }}">导出 Excel</a>
     </div>
 </section>
 

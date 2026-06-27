@@ -13,7 +13,7 @@
     </section>
 {% else %}
     <form method="post" class="form panel" id="fill-form">
-        <input type="hidden" name="started_at" value="{{ started_at }}">
+        <input type="hidden" name="started_at" value="{{ StartedAt }}">
         {% for item in questions %}
             <fieldset class="question-fill" data-question-id="{{ item.question.id }}" data-order="{{ item.question.sort_order }}">
                 <legend>Q{{ item.question.sort_order }}：{{ item.question.content }}</legend>

@@ -22,17 +22,18 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
+# 这些第三方库只用于增强功能；即使缺少它们，基础问卷功能也要正常运行。
 try:
     import matplotlib
 
     matplotlib.use("Agg")
-    from matplotlib import font_manager
+    from matplotlib import font_manager as FontManager
     import matplotlib.pyplot as plt
 
-    for font_path in ("C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf"):
-        if os.path.exists(font_path):
-            font_manager.fontManager.addfont(font_path)
-            plt.rcParams["font.sans-serif"] = [font_manager.FontProperties(fname=font_path).get_name()]
+    for FontPath in ("C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf"):
+        if os.path.exists(FontPath):
+            FontManager.fontManager.addfont(FontPath)
+            plt.rcParams["font.sans-serif"] = [FontManager.FontProperties(fname=FontPath).get_name()]
             break
     plt.rcParams["axes.unicode_minus"] = False
 except Exception:
@@ -50,15 +51,16 @@ except Exception:
     qrcode = None
 
 
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DATABASE = os.path.join(BASE_DIR, "survey.db")
-CHART_DIR = os.path.join(BASE_DIR, "static", "charts")
+BaseDir = os.path.abspath(os.path.dirname(__file__))
+DATABASE = os.path.join(BaseDir, "survey.db")
+ChartDir = os.path.join(BaseDir, "static", "charts")
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "survey-course-project-secret"
 
 
-def get_db():
+# 数据库连接：每个请求复用 g.db，请求结束后统一关闭，避免到处手动管理连接。
+def GetDb():
     if "db" not in g:
         g.db = sqlite3.connect(DATABASE)
         g.db.execute("PRAGMA foreign_keys = ON")
@@ -67,14 +69,16 @@ def get_db():
 
 
 @app.teardown_appcontext
-def close_db(error=None):
+def CloseDb(error=None):
     db = g.pop("db", None)
     if db is not None:
         db.close()
 
 
-def init_db():
-    os.makedirs(CHART_DIR, exist_ok=True)
+# 初始化数据库表结构：包含用户、问卷、题目、选项、答卷、答案和模板。
+# 外键的 ON DELETE CASCADE 用来保证删除问卷时相关题目、答案能跟着清理。
+def InitDb():
+    os.makedirs(ChartDir, exist_ok=True)
     conn = sqlite3.connect(DATABASE)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(
@@ -156,11 +160,12 @@ def init_db():
     conn.close()
 
 
-def now_text():
+# 时间统一用字符串保存，页面表单提交的 datetime-local 会在这里转换成 Python 时间对象。
+def NowText():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def parse_datetime(value):
+def ParseDatetime(value):
     if not value:
         return None
     try:
@@ -169,44 +174,47 @@ def parse_datetime(value):
         return None
 
 
-def login_required(view):
+# 登录保护装饰器：需要登录后才能进入问卷管理、编辑、统计和导出功能。
+def LoginRequired(view):
     @wraps(view)
-    def wrapped_view(**kwargs):
+    def WrappedView(**kwargs):
         if "user_id" not in session:
             flash("请先登录。")
             return redirect(url_for("login"))
         return view(**kwargs)
 
-    return wrapped_view
+    return WrappedView
 
 
 @app.before_request
-def load_logged_in_user():
-    user_id = session.get("user_id")
+def LoadLoggedInUser():
+    UserId = session.get("user_id")
     g.user = None
-    if user_id is not None:
-        g.user = get_db().execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if UserId is not None:
+        g.user = GetDb().execute("SELECT * FROM users WHERE id = ?", (UserId,)).fetchone()
 
 
-def get_survey_or_404(survey_id):
-    survey = get_db().execute(
+# 读取问卷基础信息，并带上创建者用户名，供列表、编辑和结果页展示。
+def GetSurveyOr404(SurveyId):
+    survey = GetDb().execute(
         """
         SELECT s.*, u.username AS owner_name
         FROM surveys s
         JOIN users u ON u.id = s.owner_id
         WHERE s.id = ?
         """,
-        (survey_id,),
+        (SurveyId,),
     ).fetchone()
     if survey is None:
         return None
     return survey
 
 
-def load_questions(survey_id):
-    db = get_db()
+# 读取问卷的完整题目结构：每个题目下包含自己的选项列表。
+def LoadQuestions(SurveyId):
+    db = GetDb()
     questions = db.execute(
-        "SELECT * FROM questions WHERE survey_id = ? ORDER BY sort_order", (survey_id,)
+        "SELECT * FROM questions WHERE survey_id = ? ORDER BY sort_order", (SurveyId,)
     ).fetchall()
     result = []
     for question in questions:
@@ -217,8 +225,10 @@ def load_questions(survey_id):
     return result
 
 
-def questions_to_config(questions):
-    question_order = {bundle["question"]["id"]: bundle["question"]["sort_order"] for bundle in questions}
+# 把数据库里的题目和选项转换成前端编辑器使用的 JSON 配置。
+# jump_to 保存为题号而不是数据库 id，方便用户在页面上理解和填写跳转逻辑。
+def QuestionsToConfig(questions):
+    QuestionOrder = {bundle["question"]["id"]: bundle["question"]["sort_order"] for bundle in questions}
     data = []
     for bundle in questions:
         question = bundle["question"]
@@ -229,7 +239,7 @@ def questions_to_config(questions):
                 "options": [
                     {
                         "text": option["content"],
-                        "jump_to": question_order.get(option["jump_to_question_id"], ""),
+                        "jump_to": QuestionOrder.get(option["jump_to_question_id"], ""),
                     }
                     for option in bundle["options"]
                 ],
@@ -238,11 +248,13 @@ def questions_to_config(questions):
     return data
 
 
-def normalize_questions_config(questions_data):
-    if not isinstance(questions_data, list):
+# 清洗前端提交的问题配置：只保留合法题型、非空题目和非空选项。
+# 这一步能避免无效 JSON、空题目或错误题型直接写入数据库。
+def NormalizeQuestionsConfig(QuestionsData):
+    if not isinstance(QuestionsData, list):
         return []
     clean = []
-    for item in questions_data:
+    for item in QuestionsData:
         if not isinstance(item, dict):
             continue
         qtype = item.get("qtype", "single")
@@ -256,11 +268,11 @@ def normalize_questions_config(questions_data):
             for option in item.get("options") or []:
                 if not isinstance(option, dict):
                     continue
-                option_text = option.get("text", "").strip()
-                if option_text:
+                OptionText = option.get("text", "").strip()
+                if OptionText:
                     options.append(
                         {
-                            "text": option_text,
+                            "text": OptionText,
                             "jump_to": str(option.get("jump_to", "")).strip(),
                         }
                     )
@@ -268,72 +280,77 @@ def normalize_questions_config(questions_data):
     return clean
 
 
-def save_questions_from_config(db, survey_id, questions_data):
-    questions_data = normalize_questions_config(questions_data)
-    question_ids = []
-    option_updates = []
+# 保存题目配置，并在所有题目创建完成后再回填选项跳转目标。
+# 这样可以支持“选项跳到后面的题目”，因为后面题目的数据库 id 创建后才知道。
+def SaveQuestionsFromConfig(db, SurveyId, QuestionsData):
+    QuestionsData = NormalizeQuestionsConfig(QuestionsData)
+    QuestionIds = []
+    OptionUpdates = []
 
-    for question_index, item in enumerate(questions_data, start=1):
+    for QuestionIndex, item in enumerate(QuestionsData, start=1):
         qtype = item.get("qtype", "single")
         if qtype not in {"single", "multiple", "text"}:
             qtype = "single"
         content = item.get("content", "").strip()
         if not content:
             continue
-        question_id = db.execute(
+        QuestionId = db.execute(
             """
             INSERT INTO questions (survey_id, content, qtype, sort_order)
             VALUES (?, ?, ?, ?)
             """,
-            (survey_id, content, qtype, question_index),
+            (SurveyId, content, qtype, QuestionIndex),
         ).lastrowid
-        question_ids.append(question_id)
+        QuestionIds.append(QuestionId)
         if qtype in {"single", "multiple"}:
             options = item.get("options") or []
-            for option_index, option in enumerate(options, start=1):
-                option_text = option.get("text", "").strip()
-                if not option_text:
+            for OptionIndex, option in enumerate(options, start=1):
+                OptionText = option.get("text", "").strip()
+                if not OptionText:
                     continue
-                option_id = db.execute(
+                OptionId = db.execute(
                     """
                     INSERT INTO options (question_id, content, sort_order)
                     VALUES (?, ?, ?)
                     """,
-                    (question_id, option_text, option_index),
+                    (QuestionId, OptionText, OptionIndex),
                 ).lastrowid
-                jump_index = str(option.get("jump_to", "")).strip()
-                if jump_index.isdigit():
-                    option_updates.append((option_id, int(jump_index)))
+                JumpIndex = str(option.get("jump_to", "")).strip()
+                if JumpIndex.isdigit():
+                    OptionUpdates.append((OptionId, int(JumpIndex)))
 
-    for option_id, jump_index in option_updates:
-        if 1 <= jump_index <= len(question_ids):
+    for OptionId, JumpIndex in OptionUpdates:
+        if 1 <= JumpIndex <= len(QuestionIds):
             db.execute(
                 "UPDATE options SET jump_to_question_id = ? WHERE id = ?",
-                (question_ids[jump_index - 1], option_id),
+                (QuestionIds[JumpIndex - 1], OptionId),
             )
 
-    return len(question_ids)
+    return len(QuestionIds)
 
 
-def can_manage(survey):
+# 权限判断：目前只有问卷创建者可以编辑、删除、查看统计和导出数据。
+def CanManage(survey):
     return g.user is not None and survey["owner_id"] == g.user["id"]
 
 
-def availability_message(survey):
+# 判断问卷当前是否可填写：未发布、未到开放时间、已过截止时间都会给出提示。
+def AvailabilityMessage(survey):
     if not survey["is_published"]:
         return "问卷尚未发布。"
     now = datetime.now()
-    open_at = parse_datetime(survey["open_at"])
-    close_at = parse_datetime(survey["close_at"])
-    if open_at and now < open_at:
+    OpenAt = ParseDatetime(survey["open_at"])
+    CloseAt = ParseDatetime(survey["close_at"])
+    if OpenAt and now < OpenAt:
         return f"问卷将在 {survey['open_at']} 开放。"
-    if close_at and now > close_at:
+    if CloseAt and now > CloseAt:
         return f"问卷已在 {survey['close_at']} 截止。"
     return None
 
 
-def create_survey_from_config(owner_id, form, questions_data, published=False):
-    db = get_db()
+# 从表单和题目 JSON 创建问卷；发布时会生成 slug，用于公开填写链接。
+def CreateSurveyFromConfig(OwnerId, form, QuestionsData, published=False):
+    db = GetDb()
     slug = uuid.uuid4().hex[:10] if published else None
     cursor = db.execute(
         """
@@ -344,7 +361,7 @@ def create_survey_from_config(owner_id, form, questions_data, published=False):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            owner_id,
+            OwnerId,
             form.get("title", "").strip(),
             form.get("description", "").strip(),
             1 if form.get("is_public") else 0,
@@ -354,18 +371,19 @@ def create_survey_from_config(owner_id, form, questions_data, published=False):
             form.get("open_at") or None,
             form.get("close_at") or None,
             int(form.get("target_count") or 0),
-            now_text(),
+            NowText(),
         ),
     )
-    survey_id = cursor.lastrowid
-    save_questions_from_config(db, survey_id, questions_data)
+    SurveyId = cursor.lastrowid
+    SaveQuestionsFromConfig(db, SurveyId, QuestionsData)
     db.commit()
-    return survey_id
+    return SurveyId
 
 
-def survey_to_template_config(survey_id):
-    survey = get_survey_or_404(survey_id)
-    questions = load_questions(survey_id)
+# 把已有问卷打包成模板配置，模板复用时可以直接带回编辑页面。
+def SurveyToTemplateConfig(SurveyId):
+    survey = GetSurveyOr404(SurveyId)
+    questions = LoadQuestions(SurveyId)
     data = {
         "title": survey["title"],
         "description": survey["description"],
@@ -374,16 +392,17 @@ def survey_to_template_config(survey_id):
         "open_at": survey["open_at"],
         "close_at": survey["close_at"],
         "target_count": survey["target_count"],
-        "questions": questions_to_config(questions),
+        "questions": QuestionsToConfig(questions),
     }
     return data
 
 
+# 首页：未登录用户看到公开且已发布的问卷，已登录用户直接进入管理列表。
 @app.route("/")
 def index():
     if g.user:
         return redirect(url_for("surveys"))
-    public_surveys = get_db().execute(
+    PublicSurveys = GetDb().execute(
         """
         SELECT s.*, u.username AS owner_name
         FROM surveys s JOIN users u ON u.id = s.owner_id
@@ -392,9 +411,10 @@ def index():
         LIMIT 12
         """
     ).fetchall()
-    return render_template("index.html", public_surveys=public_surveys)
+    return render_template("index.html", PublicSurveys=PublicSurveys)
 
 
+# 注册：保存密码哈希，不直接保存明文密码。
 @app.route("/register", methods=("GET", "POST"))
 def register():
     if request.method == "POST":
@@ -404,10 +424,10 @@ def register():
             flash("用户名和密码不能为空。")
         else:
             try:
-                db = get_db()
+                db = GetDb()
                 db.execute(
                     "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                    (username, generate_password_hash(password), now_text()),
+                    (username, generate_password_hash(password), NowText()),
                 )
                 db.commit()
                 flash("注册成功，请登录。")
@@ -417,12 +437,13 @@ def register():
     return render_template("auth.html", mode="register")
 
 
+# 登录：校验用户名和密码后，把用户 id 写入 session。
 @app.route("/login", methods=("GET", "POST"))
 def login():
     if request.method == "POST":
         username = request.form["username"].strip()
         password = request.form["password"]
-        user = get_db().execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        user = GetDb().execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         if user is None or not check_password_hash(user["password_hash"], password):
             flash("用户名或密码错误。")
         else:
@@ -433,6 +454,7 @@ def login():
     return render_template("auth.html", mode="login")
 
 
+# 退出登录：清空 session 后回到首页。
 @app.route("/logout")
 def logout():
     session.clear()
@@ -440,13 +462,14 @@ def logout():
     return redirect(url_for("index"))
 
 
+# 问卷列表页：同时展示“我的问卷”“公开问卷”和“我的模板”。
 @app.route("/surveys")
-@login_required
+@LoginRequired
 def surveys():
-    db = get_db()
+    db = GetDb()
     mine = db.execute(
         """
-        SELECT s.*, COUNT(r.id) AS response_count
+        SELECT s.*, COUNT(r.id) AS ResponseCount
         FROM surveys s
         LEFT JOIN responses r ON r.survey_id = s.id
         WHERE s.owner_id = ?
@@ -455,9 +478,9 @@ def surveys():
         """,
         (g.user["id"],),
     ).fetchall()
-    public_surveys = db.execute(
+    PublicSurveys = db.execute(
         """
-        SELECT s.*, u.username AS owner_name, COUNT(r.id) AS response_count
+        SELECT s.*, u.username AS owner_name, COUNT(r.id) AS ResponseCount
         FROM surveys s
         JOIN users u ON u.id = s.owner_id
         LEFT JOIN responses r ON r.survey_id = s.id
@@ -469,36 +492,38 @@ def surveys():
     templates = db.execute(
         "SELECT * FROM templates WHERE user_id = ? ORDER BY created_at DESC", (g.user["id"],)
     ).fetchall()
-    return render_template("surveys.html", mine=mine, public_surveys=public_surveys, templates=templates)
+    return render_template("surveys.html", mine=mine, PublicSurveys=PublicSurveys, templates=templates)
 
 
+# 新建问卷：页面通过 questions_json 提交题目结构，后端统一清洗后保存。
 @app.route("/survey/new", methods=("GET", "POST"))
-@login_required
-def new_survey():
+@LoginRequired
+def NewSurvey():
     initial = None
     if request.method == "POST":
-        questions_json = request.form.get("questions_json", "[]")
+        QuestionsJson = request.form.get("questions_json", "[]")
         try:
-            questions_data = json.loads(questions_json)
+            QuestionsData = json.loads(QuestionsJson)
         except json.JSONDecodeError:
-            questions_data = []
-        questions_data = normalize_questions_config(questions_data)
+            QuestionsData = []
+        QuestionsData = NormalizeQuestionsConfig(QuestionsData)
         if not request.form.get("title", "").strip():
             flash("问卷标题不能为空。")
-        elif not questions_data:
+        elif not QuestionsData:
             flash("至少需要添加一个问题。")
         else:
-            survey_id = create_survey_from_config(g.user["id"], request.form, questions_data)
+            SurveyId = CreateSurveyFromConfig(g.user["id"], request.form, QuestionsData)
             flash("问卷创建成功，可以继续发布或保存为模板。")
-            return redirect(url_for("edit_survey", survey_id=survey_id))
+            return redirect(url_for("EditSurvey", SurveyId=SurveyId))
     return render_template("edit_survey.html", survey=None, questions=[], initial=initial)
 
 
-@app.route("/template/<int:template_id>/use")
-@login_required
-def use_template(template_id):
-    template = get_db().execute(
-        "SELECT * FROM templates WHERE id = ? AND user_id = ?", (template_id, g.user["id"])
+# 使用模板：把模板里的 JSON 配置作为初始数据传给问卷编辑页。
+@app.route("/template/<int:TemplateId>/use")
+@LoginRequired
+def UseTemplate(TemplateId):
+    template = GetDb().execute(
+        "SELECT * FROM templates WHERE id = ? AND user_id = ?", (TemplateId, g.user["id"])
     ).fetchone()
     if template is None:
         flash("模板不存在。")
@@ -507,37 +532,38 @@ def use_template(template_id):
     return render_template("edit_survey.html", survey=None, questions=[], initial=config)
 
 
-@app.route("/survey/<int:survey_id>/edit", methods=("GET", "POST"))
-@login_required
-def edit_survey(survey_id):
-    survey = get_survey_or_404(survey_id)
-    if survey is None or not can_manage(survey):
+# 编辑问卷：允许修改标题、说明、开放时间等；已有答卷后禁止改题目结构，避免答案错位。
+@app.route("/survey/<int:SurveyId>/edit", methods=("GET", "POST"))
+@LoginRequired
+def EditSurvey(SurveyId):
+    survey = GetSurveyOr404(SurveyId)
+    if survey is None or not CanManage(survey):
         flash("无权操作该问卷。")
         return redirect(url_for("surveys"))
-    questions = load_questions(survey_id)
+    questions = LoadQuestions(SurveyId)
     if request.method == "POST":
-        questions_json = request.form.get("questions_json", "[]")
+        QuestionsJson = request.form.get("questions_json", "[]")
         try:
-            questions_data = json.loads(questions_json)
+            QuestionsData = json.loads(QuestionsJson)
         except json.JSONDecodeError:
-            questions_data = []
-        questions_data = normalize_questions_config(questions_data)
-        response_count = get_db().execute(
-            "SELECT COUNT(*) AS total FROM responses WHERE survey_id = ?", (survey_id,)
+            QuestionsData = []
+        QuestionsData = NormalizeQuestionsConfig(QuestionsData)
+        ResponseCount = GetDb().execute(
+            "SELECT COUNT(*) AS total FROM responses WHERE survey_id = ?", (SurveyId,)
         ).fetchone()["total"]
-        current_config = normalize_questions_config(questions_to_config(questions))
-        questions_changed = questions_data != current_config
+        CurrentConfig = NormalizeQuestionsConfig(QuestionsToConfig(questions))
+        QuestionsChanged = QuestionsData != CurrentConfig
         if not request.form.get("title", "").strip():
             flash("问卷标题不能为空。")
-            return redirect(url_for("edit_survey", survey_id=survey_id))
-        if not questions_data:
+            return redirect(url_for("EditSurvey", SurveyId=SurveyId))
+        if not QuestionsData:
             flash("至少需要保留一个问题。")
-            return redirect(url_for("edit_survey", survey_id=survey_id))
-        if response_count and questions_changed:
+            return redirect(url_for("EditSurvey", SurveyId=SurveyId))
+        if ResponseCount and QuestionsChanged:
             flash("该问卷已有答卷，暂不能修改问题结构，避免已有答案错位。")
-            return redirect(url_for("edit_survey", survey_id=survey_id))
+            return redirect(url_for("EditSurvey", SurveyId=SurveyId))
 
-        db = get_db()
+        db = GetDb()
         db.execute(
             """
             UPDATE surveys
@@ -553,105 +579,110 @@ def edit_survey(survey_id):
                 request.form.get("open_at") or None,
                 request.form.get("close_at") or None,
                 int(request.form.get("target_count") or 0),
-                survey_id,
+                SurveyId,
             ),
         )
-        if questions_changed:
+        if QuestionsChanged:
             db.execute(
                 "DELETE FROM options WHERE question_id IN (SELECT id FROM questions WHERE survey_id = ?)",
-                (survey_id,),
+                (SurveyId,),
             )
-            db.execute("DELETE FROM questions WHERE survey_id = ?", (survey_id,))
-            save_questions_from_config(db, survey_id, questions_data)
+            db.execute("DELETE FROM questions WHERE survey_id = ?", (SurveyId,))
+            SaveQuestionsFromConfig(db, SurveyId, QuestionsData)
         db.commit()
         flash("问卷设置和问题结构已保存。")
-        return redirect(url_for("edit_survey", survey_id=survey_id))
+        return redirect(url_for("EditSurvey", SurveyId=SurveyId))
     return render_template(
         "edit_survey.html",
         survey=survey,
         questions=questions,
-        question_config=questions_to_config(questions),
+        QuestionConfig=QuestionsToConfig(questions),
         initial=None,
     )
 
 
-@app.route("/survey/<int:survey_id>/publish", methods=("POST",))
-@login_required
-def publish_survey(survey_id):
-    survey = get_survey_or_404(survey_id)
-    if survey is None or not can_manage(survey):
+# 发布问卷：生成或复用 slug，让问卷拥有可分享的填写地址和二维码。
+@app.route("/survey/<int:SurveyId>/publish", methods=("POST",))
+@LoginRequired
+def PublishSurvey(SurveyId):
+    survey = GetSurveyOr404(SurveyId)
+    if survey is None or not CanManage(survey):
         flash("无权操作该问卷。")
         return redirect(url_for("surveys"))
     slug = survey["slug"] or uuid.uuid4().hex[:10]
-    get_db().execute(
-        "UPDATE surveys SET is_published = 1, slug = ? WHERE id = ?", (slug, survey_id)
+    GetDb().execute(
+        "UPDATE surveys SET is_published = 1, slug = ? WHERE id = ?", (slug, SurveyId)
     )
-    get_db().commit()
+    GetDb().commit()
     flash("问卷已发布。")
-    return redirect(url_for("edit_survey", survey_id=survey_id))
+    return redirect(url_for("EditSurvey", SurveyId=SurveyId))
 
 
-@app.route("/survey/<int:survey_id>/delete", methods=("POST",))
-@login_required
-def delete_survey(survey_id):
-    survey = get_survey_or_404(survey_id)
-    if survey is None or not can_manage(survey):
+# 删除问卷：按答案、答卷、选项、题目、问卷的顺序清理，保证外键关系不冲突。
+@app.route("/survey/<int:SurveyId>/delete", methods=("POST",))
+@LoginRequired
+def DeleteSurvey(SurveyId):
+    survey = GetSurveyOr404(SurveyId)
+    if survey is None or not CanManage(survey):
         flash("无权操作该问卷。")
         return redirect(url_for("surveys"))
-    db = get_db()
+    db = GetDb()
     db.execute(
         """
         DELETE FROM answers
         WHERE response_id IN (SELECT id FROM responses WHERE survey_id = ?)
            OR question_id IN (SELECT id FROM questions WHERE survey_id = ?)
         """,
-        (survey_id, survey_id),
+        (SurveyId, SurveyId),
     )
-    db.execute("DELETE FROM responses WHERE survey_id = ?", (survey_id,))
+    db.execute("DELETE FROM responses WHERE survey_id = ?", (SurveyId,))
     db.execute(
         "DELETE FROM options WHERE question_id IN (SELECT id FROM questions WHERE survey_id = ?)",
-        (survey_id,),
+        (SurveyId,),
     )
-    db.execute("DELETE FROM questions WHERE survey_id = ?", (survey_id,))
-    db.execute("DELETE FROM surveys WHERE id = ?", (survey_id,))
+    db.execute("DELETE FROM questions WHERE survey_id = ?", (SurveyId,))
+    db.execute("DELETE FROM surveys WHERE id = ?", (SurveyId,))
     db.commit()
     flash("问卷已删除。")
     return redirect(url_for("surveys"))
 
 
-@app.route("/survey/<int:survey_id>/template", methods=("POST",))
-@login_required
-def save_template(survey_id):
-    survey = get_survey_or_404(survey_id)
-    if survey is None or not can_manage(survey):
+# 保存模板：把当前问卷结构保存成 JSON，后续可以快速生成相似问卷。
+@app.route("/survey/<int:SurveyId>/template", methods=("POST",))
+@LoginRequired
+def SaveTemplate(SurveyId):
+    survey = GetSurveyOr404(SurveyId)
+    if survey is None or not CanManage(survey):
         flash("无权操作该问卷。")
         return redirect(url_for("surveys"))
-    config = survey_to_template_config(survey_id)
+    config = SurveyToTemplateConfig(SurveyId)
     name = request.form.get("template_name", "").strip() or survey["title"]
-    get_db().execute(
+    GetDb().execute(
         "INSERT INTO templates (user_id, name, config_json, created_at) VALUES (?, ?, ?, ?)",
-        (g.user["id"], name, json.dumps(config, ensure_ascii=False), now_text()),
+        (g.user["id"], name, json.dumps(config, ensure_ascii=False), NowText()),
     )
-    get_db().commit()
+    GetDb().commit()
     flash("已保存为模板。")
     return redirect(url_for("surveys"))
 
 
-@app.route("/template/<int:template_id>/delete", methods=("POST",))
-@login_required
-def delete_template(template_id):
-    db = get_db()
+# 删除模板：只允许删除当前登录用户自己的模板。
+@app.route("/template/<int:TemplateId>/delete", methods=("POST",))
+@LoginRequired
+def DeleteTemplate(TemplateId):
+    db = GetDb()
     cursor = db.execute(
-        "DELETE FROM templates WHERE id = ? AND user_id = ?", (template_id, g.user["id"])
+        "DELETE FROM templates WHERE id = ? AND user_id = ?", (TemplateId, g.user["id"])
     )
     db.commit()
     flash("模板已删除。" if cursor.rowcount else "模板不存在。")
     return redirect(url_for("surveys"))
 
 
+# 填写问卷：GET 展示题目，POST 保存答卷；匿名问卷不会记录填写用户 id。
 @app.route("/s/<slug>", methods=("GET", "POST"))
-def fill_survey(slug):
-    survey = get_db().execute(
+def FillSurvey(slug):
+    survey = GetDb().execute(
         """
         SELECT s.*, u.username AS owner_name
         FROM surveys s JOIN users u ON u.id = s.owner_id
@@ -662,23 +693,23 @@ def fill_survey(slug):
     if survey is None:
         flash("问卷不存在。")
         return redirect(url_for("index"))
-    message = availability_message(survey)
-    questions = load_questions(survey["id"])
+    message = AvailabilityMessage(survey)
+    questions = LoadQuestions(survey["id"])
     if message:
         return render_template("fill.html", survey=survey, questions=questions, message=message)
 
     if request.method == "POST":
-        started_at = request.form.get("started_at") or now_text()
-        started_time = parse_datetime(started_at)
-        duration = int(time.time() - started_time.timestamp()) if started_time else 0
-        user_id = None if survey["is_anonymous"] else session.get("user_id")
-        db = get_db()
-        response_id = db.execute(
+        StartedAt = request.form.get("started_at") or NowText()
+        StartedTime = ParseDatetime(StartedAt)
+        duration = int(time.time() - StartedTime.timestamp()) if StartedTime else 0
+        UserId = None if survey["is_anonymous"] else session.get("user_id")
+        db = GetDb()
+        ResponseId = db.execute(
             """
             INSERT INTO responses (survey_id, user_id, started_at, submitted_at, duration_seconds)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (survey["id"], user_id, started_at, now_text(), max(duration, 0)),
+            (survey["id"], UserId, StartedAt, NowText(), max(duration, 0)),
         ).lastrowid
 
         for bundle in questions:
@@ -687,30 +718,32 @@ def fill_survey(slug):
             if question["qtype"] == "text":
                 db.execute(
                     "INSERT INTO answers (response_id, question_id, text_answer, option_ids) VALUES (?, ?, ?, ?)",
-                    (response_id, question["id"], request.form.get(field, "").strip(), None),
+                    (ResponseId, question["id"], request.form.get(field, "").strip(), None),
                 )
             elif question["qtype"] == "single":
-                option_id = request.form.get(field)
-                option_ids = json.dumps([int(option_id)]) if option_id else json.dumps([])
+                # 单选题也用 JSON 数组保存，和多选题共用同一套统计逻辑。
+                OptionId = request.form.get(field)
+                OptionIds = json.dumps([int(OptionId)]) if OptionId else json.dumps([])
                 db.execute(
                     "INSERT INTO answers (response_id, question_id, text_answer, option_ids) VALUES (?, ?, ?, ?)",
-                    (response_id, question["id"], None, option_ids),
+                    (ResponseId, question["id"], None, OptionIds),
                 )
             else:
-                option_ids = [int(value) for value in request.form.getlist(field) if value.isdigit()]
+                OptionIds = [int(value) for value in request.form.getlist(field) if value.isdigit()]
                 db.execute(
                     "INSERT INTO answers (response_id, question_id, text_answer, option_ids) VALUES (?, ?, ?, ?)",
-                    (response_id, question["id"], None, json.dumps(option_ids)),
+                    (ResponseId, question["id"], None, json.dumps(OptionIds)),
                 )
         db.commit()
         return render_template("thanks.html", survey=survey)
 
-    return render_template("fill.html", survey=survey, questions=questions, message=None, started_at=now_text())
+    return render_template("fill.html", survey=survey, questions=questions, message=None, StartedAt=NowText())
 
 
-def collect_stats(survey_id):
-    db = get_db()
-    questions = load_questions(survey_id)
+# 统计结果：填空题收集文本答案，选择题按选项累计票数并生成前端图表数据。
+def CollectStats(SurveyId):
+    db = GetDb()
+    questions = LoadQuestions(SurveyId)
     stats = []
     for bundle in questions:
         question = bundle["question"]
@@ -743,9 +776,9 @@ def collect_stats(survey_id):
                     selected = json.loads(answer["option_ids"] or "[]")
                 except json.JSONDecodeError:
                     selected = []
-                for option_id in selected:
-                    if option_id in counts:
-                        counts[option_id] += 1
+                for OptionId in selected:
+                    if OptionId in counts:
+                        counts[OptionId] += 1
             item["options"] = [{"option": option, "count": counts[option["id"]]} for option in options]
             item["chart_data"] = [
                 {"label": option["content"], "count": counts[option["id"]]}
@@ -757,15 +790,16 @@ def collect_stats(survey_id):
     return stats
 
 
-def build_chart(survey_id, question_id, option_counts, qtype):
-    if plt is None or not option_counts:
+# 旧版静态图表生成函数：保留给可能的扩展使用，当前结果页主要使用前端交互图表。
+def BuildChart(SurveyId, QuestionId, OptionCounts, qtype):
+    if plt is None or not OptionCounts:
         return None
-    labels = [row["option"]["content"] for row in option_counts]
-    values = [row["count"] for row in option_counts]
+    labels = [row["option"]["content"] for row in OptionCounts]
+    values = [row["count"] for row in OptionCounts]
     if sum(values) == 0:
         return None
-    filename = f"survey_{survey_id}_q_{question_id}.png"
-    path = os.path.join(CHART_DIR, filename)
+    filename = f"survey_{SurveyId}_q_{QuestionId}.png"
+    path = os.path.join(ChartDir, filename)
     plt.figure(figsize=(6, 4))
     if qtype == "single":
         plt.pie(values, labels=labels, autopct="%1.0f%%")
@@ -781,38 +815,40 @@ def build_chart(survey_id, question_id, option_counts, qtype):
     return f"charts/{filename}"
 
 
-@app.route("/survey/<int:survey_id>/results")
-@login_required
-def results(survey_id):
-    survey = get_survey_or_404(survey_id)
-    if survey is None or not can_manage(survey):
+# 结果页：汇总回收数量、平均答题时长、回收率，并展示每道题的统计结果。
+@app.route("/survey/<int:SurveyId>/results")
+@LoginRequired
+def results(SurveyId):
+    survey = GetSurveyOr404(SurveyId)
+    if survey is None or not CanManage(survey):
         flash("无权查看该问卷结果。")
         return redirect(url_for("surveys"))
-    db = get_db()
-    response_count = db.execute(
-        "SELECT COUNT(*) AS total FROM responses WHERE survey_id = ?", (survey_id,)
+    db = GetDb()
+    ResponseCount = db.execute(
+        "SELECT COUNT(*) AS total FROM responses WHERE survey_id = ?", (SurveyId,)
     ).fetchone()["total"]
-    avg_duration = db.execute(
-        "SELECT AVG(duration_seconds) AS avg_time FROM responses WHERE survey_id = ?", (survey_id,)
+    AvgDuration = db.execute(
+        "SELECT AVG(duration_seconds) AS avg_time FROM responses WHERE survey_id = ?", (SurveyId,)
     ).fetchone()["avg_time"]
-    recovery_rate = None
+    RecoveryRate = None
     if survey["target_count"]:
-        recovery_rate = round(response_count * 100 / survey["target_count"], 2)
-    stats = collect_stats(survey_id)
+        RecoveryRate = round(ResponseCount * 100 / survey["target_count"], 2)
+    stats = CollectStats(SurveyId)
     return render_template(
         "results.html",
         survey=survey,
         stats=stats,
-        response_count=response_count,
-        avg_duration=round(avg_duration or 0, 1),
-        recovery_rate=recovery_rate,
+        ResponseCount=ResponseCount,
+        AvgDuration=round(AvgDuration or 0, 1),
+        RecoveryRate=RecoveryRate,
     )
 
 
-def export_rows(survey_id):
-    survey = get_survey_or_404(survey_id)
-    questions = load_questions(survey_id)
-    db = get_db()
+# 导出数据行：每份答卷是一行，每道题展开成一列，选择题导出选项文字。
+def ExportRows(SurveyId):
+    survey = GetSurveyOr404(SurveyId)
+    questions = LoadQuestions(SurveyId)
+    db = GetDb()
     responses = db.execute(
         """
         SELECT r.*, u.username
@@ -821,7 +857,7 @@ def export_rows(survey_id):
         WHERE r.survey_id = ?
         ORDER BY r.id
         """,
-        (survey_id,),
+        (SurveyId,),
     ).fetchall()
     rows = []
     for response in responses:
@@ -842,22 +878,24 @@ def export_rows(survey_id):
                 if question["qtype"] == "text":
                     value = answer["text_answer"] or ""
                 else:
-                    selected_ids = json.loads(answer["option_ids"] or "[]")
-                    option_map = {option["id"]: option["content"] for option in bundle["options"]}
-                    value = "；".join(option_map.get(option_id, "") for option_id in selected_ids)
+                    # 数据库存的是选项 id，导出时转换为用户能看懂的选项文字。
+                    SelectedIds = json.loads(answer["option_ids"] or "[]")
+                    OptionMap = {option["id"]: option["content"] for option in bundle["options"]}
+                    value = "；".join(OptionMap.get(OptionId, "") for OptionId in SelectedIds)
             base[f"Q{question['sort_order']} {question['content']}"] = value
         rows.append(base)
     return rows
 
 
-@app.route("/survey/<int:survey_id>/export.csv")
-@login_required
-def export_csv_file(survey_id):
-    survey = get_survey_or_404(survey_id)
-    if survey is None or not can_manage(survey):
+# CSV 导出：加 UTF-8 BOM，方便 Excel 直接打开中文不乱码。
+@app.route("/survey/<int:SurveyId>/export.csv")
+@LoginRequired
+def ExportCsvFile(SurveyId):
+    survey = GetSurveyOr404(SurveyId)
+    if survey is None or not CanManage(survey):
         flash("无权导出该问卷。")
         return redirect(url_for("surveys"))
-    rows = export_rows(survey_id)
+    rows = ExportRows(SurveyId)
     output = io.StringIO()
     headers = list(rows[0].keys()) if rows else ["response_id", "user", "submitted_at", "duration_seconds"]
     writer = csv.DictWriter(output, fieldnames=headers)
@@ -867,21 +905,22 @@ def export_csv_file(survey_id):
     return Response(
         data,
         mimetype="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f"attachment; filename=survey_{survey_id}.csv"},
+        headers={"Content-Disposition": f"attachment; filename=survey_{SurveyId}.csv"},
     )
 
 
-@app.route("/survey/<int:survey_id>/export.xlsx")
-@login_required
-def export_xlsx_file(survey_id):
-    survey = get_survey_or_404(survey_id)
-    if survey is None or not can_manage(survey):
+# Excel 导出：在 CSV 的基础上增加表头加粗和列宽自适应。
+@app.route("/survey/<int:SurveyId>/export.xlsx")
+@LoginRequired
+def ExportXlsxFile(SurveyId):
+    survey = GetSurveyOr404(SurveyId)
+    if survey is None or not CanManage(survey):
         flash("无权导出该问卷。")
         return redirect(url_for("surveys"))
     if openpyxl is None:
-        flash("openpyxl 未安装，无法导出 Excel。")
-        return redirect(url_for("results", survey_id=survey_id))
-    rows = export_rows(survey_id)
+        # Excel 导出依赖 openpyxl；缺少时直接回到结果页，不把安装细节展示给用户。
+        return redirect(url_for("results", SurveyId=SurveyId))
+    rows = ExportRows(SurveyId)
     headers = list(rows[0].keys()) if rows else ["response_id", "user", "submitted_at", "duration_seconds"]
     workbook = openpyxl.Workbook()
     sheet = workbook.active
@@ -894,41 +933,41 @@ def export_xlsx_file(survey_id):
     for column in sheet.columns:
         width = max(len(str(cell.value or "")) for cell in column)
         sheet.column_dimensions[column[0].column_letter].width = min(max(width + 2, 12), 40)
-    file_obj = io.BytesIO()
-    workbook.save(file_obj)
-    file_obj.seek(0)
+    FileObj = io.BytesIO()
+    workbook.save(FileObj)
+    FileObj.seek(0)
     return send_file(
-        file_obj,
+        FileObj,
         as_attachment=True,
-        download_name=f"survey_{survey_id}.xlsx",
+        download_name=f"survey_{SurveyId}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
+# 二维码接口：根据问卷填写链接生成 PNG，编辑页直接把它当图片加载。
 @app.route("/s/<slug>/qr.png")
-def qr_code(slug):
-    survey = get_db().execute("SELECT * FROM surveys WHERE slug = ?", (slug,)).fetchone()
+def QrCode(slug):
+    survey = GetDb().execute("SELECT * FROM surveys WHERE slug = ?", (slug,)).fetchone()
     if survey is None:
         flash("问卷不存在。")
         return redirect(url_for("index"))
     if qrcode is None:
-        return Response(
-            "当前环境未安装 qrcode，请执行 pip install qrcode[pil] 后刷新二维码。",
-            mimetype="text/plain; charset=utf-8",
-        )
-    link = url_for("fill_survey", slug=slug, _external=True)
+        # 二维码图片依赖 qrcode；缺少时返回空响应，避免页面出现安装命令说明。
+        return Response(status=204)
+    link = url_for("FillSurvey", slug=slug, _external=True)
     image = qrcode.make(link)
-    file_obj = io.BytesIO()
-    image.save(file_obj, format="PNG")
-    file_obj.seek(0)
-    return send_file(file_obj, mimetype="image/png")
+    FileObj = io.BytesIO()
+    image.save(FileObj, format="PNG")
+    FileObj.seek(0)
+    return send_file(FileObj, mimetype="image/png")
 
 
+# 模板里可直接调用 AvailabilityMessage，用来显示问卷是否可填写。
 @app.context_processor
-def inject_helpers():
-    return {"availability_message": availability_message}
+def InjectHelpers():
+    return {"AvailabilityMessage": AvailabilityMessage}
 
 
 if __name__ == "__main__":
-    init_db()
+    InitDb()
     app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)

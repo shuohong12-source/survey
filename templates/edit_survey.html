@@ -7,11 +7,11 @@
         <p class="muted">支持单选题、多选题、填空题，以及按选项跳转到指定题号。</p>
     </div>
     {% if survey and survey.slug %}
-        <a class="button" href="{{ url_for('fill_survey', slug=survey.slug) }}">打开填写页</a>
+        <a class="button" href="{{ url_for('FillSurvey', slug=survey.slug) }}">打开填写页</a>
     {% endif %}
 </section>
 
-<form method="post" action="{{ url_for('edit_survey', survey_id=survey.id) if survey else url_for('new_survey') }}" class="form panel" id="survey-form">
+<form method="post" action="{{ url_for('EditSurvey', SurveyId=survey.id) if survey else url_for('NewSurvey') }}" class="form panel" id="survey-form">
     <div class="two-col">
         <label>
             标题
@@ -60,21 +60,21 @@
         <div>
             <h2>发布与分享</h2>
             {% if survey.slug %}
-                <p>填写链接：<a href="{{ url_for('fill_survey', slug=survey.slug, _external=True) }}">{{ url_for('fill_survey', slug=survey.slug, _external=True) }}</a></p>
-                <img class="qr" src="{{ url_for('qr_code', slug=survey.slug) }}" alt="问卷二维码">
+                <p>填写链接：<a href="{{ url_for('FillSurvey', slug=survey.slug, _external=True) }}">{{ url_for('FillSurvey', slug=survey.slug, _external=True) }}</a></p>
+                <img class="qr" src="{{ url_for('QrCode', slug=survey.slug) }}" alt="问卷二维码">
             {% else %}
                 <p class="muted">发布后会生成填写链接和二维码。</p>
             {% endif %}
         </div>
         <div class="actions column">
-            <form method="post" action="{{ url_for('publish_survey', survey_id=survey.id) }}">
+            <form method="post" action="{{ url_for('PublishSurvey', SurveyId=survey.id) }}">
                 <button class="button" type="submit">发布问卷</button>
             </form>
-            <form method="post" action="{{ url_for('save_template', survey_id=survey.id) }}" class="inline-form">
+            <form method="post" action="{{ url_for('SaveTemplate', SurveyId=survey.id) }}" class="inline-form">
                 <input name="template_name" placeholder="模板名称" value="{{ survey.title }}">
                 <button class="button secondary" type="submit">保存为模板</button>
             </form>
-            <form method="post" action="{{ url_for('delete_survey', survey_id=survey.id) }}" onsubmit="return confirm('确定删除这个问卷吗？相关题目、答卷和统计结果也会一并删除。');">
+            <form method="post" action="{{ url_for('DeleteSurvey', SurveyId=survey.id) }}" onsubmit="return confirm('确定删除这个问卷吗？相关题目、答卷和统计结果也会一并删除。');">
                 <button class="button danger" type="submit">删除问卷</button>
             </form>
         </div>
@@ -82,7 +82,7 @@
 {% endif %}
 
 <script>
-const initialQuestions = {{ (question_config if survey else (initial.questions if initial else [])) | tojson }};
+const initialQuestions = {{ (QuestionConfig if survey else (initial.questions if initial else [])) | tojson }};
 
 function addQuestion(data = {}) {
     const list = document.getElementById("question-list");
