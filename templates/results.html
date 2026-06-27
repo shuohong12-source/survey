@@ -97,6 +97,7 @@ function renderDonutChart(container, data, mode) {
             <circle class="donut-segment" r="${radius}" cx="110" cy="110"
                 stroke="${color}" stroke-dasharray="${dash} ${gap}"
                 stroke-dashoffset="${offset}"
+                data-index="${index}"
                 data-label="${escapeHtml(row.label)}"
                 data-value="${row.count} 票，${Math.round(percent * 10) / 10}%"></circle>
         `;
@@ -104,11 +105,11 @@ function renderDonutChart(container, data, mode) {
         return segment;
     }).join("");
     const legend = data.map((row, index) => `
-        <div class="chart-legend-item">
+        <button class="chart-legend-item" type="button" data-index="${index}">
             <span style="--legend-color:${chartColors[index % chartColors.length]}"></span>
             <strong>${escapeHtml(row.label)}</strong>
             <em>${chartValue(row, total, mode)}</em>
-        </div>
+        </button>
     `).join("");
     container.innerHTML = `
         <div class="donut-wrap">
@@ -116,10 +117,36 @@ function renderDonutChart(container, data, mode) {
                 <circle class="donut-bg" r="${radius}" cx="110" cy="110"></circle>
                 ${segments}
             </svg>
-            <div class="donut-center"><strong>${total}</strong><span>总票数</span></div>
+            <div class="donut-center"><strong>${total}</strong><span>总票数</span><em></em></div>
         </div>
         <div class="chart-legend">${legend}</div>
     `;
+    const centerValue = container.querySelector(".donut-center strong");
+    const centerLabel = container.querySelector(".donut-center span");
+    const centerSub = container.querySelector(".donut-center em");
+    const segmentNodes = [...container.querySelectorAll(".donut-segment")];
+    const legendNodes = [...container.querySelectorAll(".chart-legend-item")];
+    const focus = index => {
+        const activeIndex = index === null ? null : Number(index);
+        segmentNodes.forEach(node => node.classList.toggle("active", Number(node.dataset.index) === activeIndex));
+        legendNodes.forEach(node => node.classList.toggle("active", Number(node.dataset.index) === activeIndex));
+        if (activeIndex === null) {
+            centerValue.textContent = total;
+            centerLabel.textContent = "总票数";
+            centerSub.textContent = "";
+            return;
+        }
+        const row = data[activeIndex];
+        centerValue.textContent = mode === "percent" ? chartValue(row, total, mode) : row.count;
+        centerLabel.textContent = row.label;
+        centerSub.textContent = mode === "percent" ? `${row.count} 票` : chartValue(row, total, "percent");
+    };
+    [...segmentNodes, ...legendNodes].forEach(node => {
+        node.addEventListener("mouseenter", () => focus(node.dataset.index));
+        node.addEventListener("mouseleave", () => focus(null));
+        node.addEventListener("focus", () => focus(node.dataset.index));
+        node.addEventListener("blur", () => focus(null));
+    });
 }
 
 function escapeHtml(value) {

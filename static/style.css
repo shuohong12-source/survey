@@ -520,7 +520,8 @@ td {
     transition: stroke-width .2s ease, opacity .2s ease, filter .2s ease;
 }
 
-.donut-segment:hover {
+.donut-segment:hover,
+.donut-segment.active {
     stroke-width: 32;
     opacity: .9;
     filter: drop-shadow(0 6px 10px rgba(15, 23, 42, .18));
@@ -549,6 +550,14 @@ td {
     font-weight: 800;
 }
 
+.donut-center em {
+    margin-top: 3px;
+    color: #2563eb;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 800;
+}
+
 .chart-legend {
     display: grid;
     gap: 10px;
@@ -559,6 +568,25 @@ td {
     grid-template-columns: 12px minmax(0, 1fr) auto;
     gap: 10px;
     align-items: center;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.chart-legend-item:hover,
+.chart-legend-item:focus-visible,
+.chart-legend-item.active {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    transform: translateX(2px);
+    outline: none;
 }
 
 .chart-legend-item span {
