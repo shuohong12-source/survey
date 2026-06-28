@@ -1,5 +1,4 @@
 """问卷结果统计。
-
 统计模块只负责把数据库中的答案整理成页面需要的数据结构：
 - 选择题：统计每个选项的票数；
 - 填空题：收集文本答案；
@@ -8,18 +7,20 @@
 
 import json
 import os
-
 from flask import current_app
-
 from .database import GetDb
 from .dependencies import plt
 from .models import LoadQuestions
 
 
 def CollectStats(SurveyId):
-    """统计指定问卷的所有题目结果。"""
+    """统计指定问卷的所有题目结果。
+    """
+
+    
+
     db = GetDb()
-    questions = LoadQuestions(SurveyId)
+    questions=LoadQuestions(SurveyId)
     stats = []
     for bundle in questions:
         question = bundle["question"]
@@ -76,10 +77,11 @@ def CollectStats(SurveyId):
 
 def BuildChart(SurveyId, QuestionId, OptionCounts, qtype):
     """生成 matplotlib 静态图表。
-
     当前页面主要使用前端图表，这个函数保留给扩展使用。
     如果 matplotlib 没安装、没有数据或票数全为 0，就返回 None。
     """
+    
+    
     if plt is None or not OptionCounts:
         return None
     labels = [row["option"]["content"] for row in OptionCounts]
@@ -88,6 +90,7 @@ def BuildChart(SurveyId, QuestionId, OptionCounts, qtype):
         return None
     filename = f"survey_{SurveyId}_q_{QuestionId}.png"
     path = os.path.join(current_app.config["CHART_DIR"], filename)
+
 
     # 选择题类型不同，使用不同图形表达。
     plt.figure(figsize=(6, 4))
@@ -103,3 +106,6 @@ def BuildChart(SurveyId, QuestionId, OptionCounts, qtype):
     plt.savefig(path, dpi=130)
     plt.close()
     return f"charts/{filename}"
+
+
+

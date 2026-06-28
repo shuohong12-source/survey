@@ -12,7 +12,6 @@ from flask import current_app, g
 
 
 def GetDb():
-
     """获取当前请求使用的数据库连接。
     第一次调用时创建连接，之后同一个请求再次调用会直接复用 g.db。
     row_factory 设置为 sqlite3.Row 后，可以像字典一样用 row["title"] 取值。
@@ -20,7 +19,6 @@ def GetDb():
     
     if "db" not in g:
         g.db = sqlite3.connect(current_app.config["DATABASE"])
-
         # SQLite 默认不强制执行外键约束，需要手动打开。
         g.db.execute("PRAGMA foreign_keys = ON")
         g.db.row_factory = sqlite3.Row
@@ -28,25 +26,20 @@ def GetDb():
 
 
 def CloseDb(error=None):
-
     """请求结束时关闭数据库连接。
     这个函数会被 Flask 的 teardown_appcontext 调用，不需要在每个视图函数里
     手动 close，避免遗漏。
     """
-    
     db = g.pop("db", None)
     if db is not None:
         db.close()
 
 
 def InitDb():
-
     """初始化数据库表结构。
     CREATE TABLE IF NOT EXISTS 可以反复执行：表不存在就创建，已经存在就跳过。
     这样首次启动和后续启动都可以安全调用 InitDb。
     """
-
-
 
     os.makedirs(current_app.config["CHART_DIR"], exist_ok=True)
     conn = sqlite3.connect(current_app.config["DATABASE"])

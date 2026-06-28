@@ -1,5 +1,4 @@
 """答卷导出。
-
 导出时采用“一份答卷一行”的结构：
 - 前几列是答卷基本信息；
 - 后面每道题展开成一列；
@@ -9,19 +8,17 @@
 import csv
 import io
 import json
-
 from flask import Response, send_file
-
 from .database import GetDb
 from .dependencies import Font, openpyxl
 from .models import GetSurveyOr404, LoadQuestions
-
-
 DEFAULT_EXPORT_HEADERS = ["response_id", "user", "submitted_at", "duration_seconds"]
 
 
 def ExportRows(SurveyId):
-    """把数据库中的答卷整理成可导出的行数据。"""
+    """把数据库中的答卷整理成可导出的行数据。
+    """
+    
     survey = GetSurveyOr404(SurveyId)
     questions = LoadQuestions(SurveyId)
     db = GetDb()
@@ -67,7 +64,9 @@ def ExportRows(SurveyId):
 
 
 def BuildCsvResponse(SurveyId):
-    """构造 CSV 下载响应。"""
+    """构造 CSV 下载响应。
+    """
+    
     rows = ExportRows(SurveyId)
     output = io.StringIO()
     headers = list(rows[0].keys()) if rows else DEFAULT_EXPORT_HEADERS
@@ -85,7 +84,9 @@ def BuildCsvResponse(SurveyId):
 
 
 def BuildXlsxResponse(SurveyId):
-    """构造 Excel 下载响应。"""
+    """构造 Excel 下载响应。
+    """
+    
     rows = ExportRows(SurveyId)
     headers = list(rows[0].keys()) if rows else DEFAULT_EXPORT_HEADERS
     workbook = openpyxl.Workbook()

@@ -48,15 +48,17 @@ from .utils import NowText, ParseDatetime
 
 
 def RegisterRoutes(app):
-    """把所有 URL 规则注册到 Flask 应用上。"""
+    """把所有 URL 规则注册到 Flask 应用上。
+    """
 
    
     @app.route("/")
     def index():
         """首页。
-
         已登录用户直接进入问卷列表；未登录用户展示公开且已发布的问卷。
         """
+
+
         if g.user:
             return redirect(url_for("surveys"))
         PublicSurveys = GetDb().execute(
@@ -76,9 +78,9 @@ def RegisterRoutes(app):
     @app.route("/register", methods=("GET", "POST"))
     def register():
         """注册账号。
-
         POST 时保存密码哈希，不保存明文密码。
         """
+        
         if request.method == "POST":
             username = request.form["username"].strip()
             password = request.form["password"]
@@ -102,13 +104,10 @@ def RegisterRoutes(app):
     
     @app.route("/login", methods=("GET", "POST"))
     def login():
-    
         """登录账号。
-
         校验通过后把用户 id 写入 session，后续请求通过 auth.LoadLoggedInUser
         自动加载 g.user。
         """
-    
     
         if request.method == "POST":
             username = request.form["username"].strip()
@@ -126,23 +125,26 @@ def RegisterRoutes(app):
     
     @app.route("/logout")
     def logout():
-    
-        """退出登录，清空 session。"""
+        """退出登录，清空 session。
+        """
     
         session.clear()
         flash("已退出登录。")
         return redirect(url_for("index"))
 
+
+
     @app.route("/surveys")
     @LoginRequired
-    def surveys():
+    def surveys(): 
         """问卷列表页。
-
         同时查询三类数据：
         - mine：当前用户创建的问卷；
         - PublicSurveys：所有公开已发布问卷；
         - templates：当前用户保存的模板。
         """
+        
+        
         db = GetDb()
         mine = db.execute(
             """
@@ -171,14 +173,16 @@ def RegisterRoutes(app):
         ).fetchall()
         return render_template("surveys.html", mine=mine, PublicSurveys=PublicSurveys, templates=templates)
 
+
+
     @app.route("/survey/new", methods=("GET", "POST"))
     @LoginRequired
     def NewSurvey():
         """创建问卷。
-
         前端编辑器会把题目列表序列化到 questions_json 字段。
         后端先解析 JSON，再调用 NormalizeQuestionsConfig 做安全清洗。
         """
+        
         initial = None
         if request.method == "POST":
             QuestionsJson = request.form.get("questions_json", "[]")
@@ -192,7 +196,7 @@ def RegisterRoutes(app):
             elif not QuestionsData:
                 flash("至少需要添加一个问题。")
             else:
-                # 创建成功后进入编辑页，用户可以继续发布或保存为模板。
+                # 创建成功后进入编辑页，用户可以继续发布或保存为模板。                
                 SurveyId = CreateSurveyFromConfig(g.user["id"], request.form, QuestionsData)
                 flash("问卷创建成功，可以继续发布或保存为模板。")
                 return redirect(url_for("EditSurvey", SurveyId=SurveyId))
@@ -202,11 +206,11 @@ def RegisterRoutes(app):
     @app.route("/template/<int:TemplateId>/use")
     @LoginRequired
     def UseTemplate(TemplateId):
-        
         """使用模板创建问卷。
         这里不直接写数据库，而是把模板配置传给编辑页，让用户确认后再保存。
         """
-        
+
+
         template = GetDb().execute(
             "SELECT * FROM templates WHERE id = ? AND user_id = ?", (TemplateId, g.user["id"])
         ).fetchone()
@@ -220,7 +224,6 @@ def RegisterRoutes(app):
     @app.route("/survey/<int:SurveyId>/edit", methods=("GET", "POST"))
     @LoginRequired
     def EditSurvey(SurveyId):
-    
         """编辑问卷。
         如果问卷已经收到答卷，则不允许修改题目结构，避免已有答案和新题目对不上。
         但标题、说明、公开状态、匿名设置、开放时间等基础信息仍可修改。
@@ -276,11 +279,9 @@ def RegisterRoutes(app):
                 ),
             )
             if QuestionsChanged:
-            
                 # 先删旧选项，再删旧题目，然后按新配置重建。这里是数据库删除记录，
                 # 不是文件删除，符合项目数据更新需求。
-            
-            
+    
                 db.execute(
                     "DELETE FROM options WHERE question_id IN (SELECT id FROM questions WHERE survey_id = ?)",
                     (SurveyId,),
@@ -298,13 +299,15 @@ def RegisterRoutes(app):
             initial=None,
         )
 
+
+
     @app.route("/survey/<int:SurveyId>/publish", methods=("POST",))
     @LoginRequired
     def PublishSurvey(SurveyId):
         """发布问卷。
-
         slug 是公开填写链接中的短标识。如果问卷之前发布过，就复用原 slug。
         """
+        
         survey = GetSurveyOr404(SurveyId)
         if survey is None or not CanManage(survey):
             flash("无权操作该问卷。")
@@ -317,14 +320,16 @@ def RegisterRoutes(app):
         flash("问卷已发布。")
         return redirect(url_for("EditSurvey", SurveyId=SurveyId))
 
+
+
     @app.route("/survey/<int:SurveyId>/delete", methods=("POST",))
     @LoginRequired
     def DeleteSurvey(SurveyId):
         """删除问卷及其相关数据。
-
         虽然数据库有部分 ON DELETE CASCADE，但这里显式按依赖顺序删除，
         更便于课程展示“先删答案，再删答卷/选项/题目，最后删问卷”的关系。
         """
+        
         survey = GetSurveyOr404(SurveyId)
         if survey is None or not CanManage(survey):
             flash("无权操作该问卷。")
@@ -349,10 +354,16 @@ def RegisterRoutes(app):
         flash("问卷已删除。")
         return redirect(url_for("surveys"))
 
+
+
+
     @app.route("/survey/<int:SurveyId>/template", methods=("POST",))
     @LoginRequired
     def SaveTemplate(SurveyId):
-        """把当前问卷保存为模板。"""
+        """把当前问卷保存为模板。
+        """
+
+
         survey = GetSurveyOr404(SurveyId)
         if survey is None or not CanManage(survey):
             flash("无权操作该问卷。")
@@ -367,10 +378,13 @@ def RegisterRoutes(app):
         flash("已保存为模板。")
         return redirect(url_for("surveys"))
 
+
     @app.route("/template/<int:TemplateId>/delete", methods=("POST",))
     @LoginRequired
     def DeleteTemplate(TemplateId):
-        """删除当前用户自己的模板。"""
+        """删除当前用户自己的模板。
+        """
+
         db = GetDb()
         cursor = db.execute(
             "DELETE FROM templates WHERE id = ? AND user_id = ?", (TemplateId, g.user["id"])
@@ -379,13 +393,16 @@ def RegisterRoutes(app):
         flash("模板已删除。" if cursor.rowcount else "模板不存在。")
         return redirect(url_for("surveys"))
 
+
+
+
     @app.route("/s/<slug>", methods=("GET", "POST"))
     def FillSurvey(slug):
         """填写问卷。
-
         GET 展示问卷题目，POST 保存用户提交的答案。
         匿名问卷不会记录 session 中的 user_id。
         """
+        
         survey = GetDb().execute(
             """
             SELECT s.*, u.username AS owner_name
@@ -450,13 +467,16 @@ def RegisterRoutes(app):
             "fill.html", survey=survey, questions=questions, message=None, StartedAt=NowText()
         )
 
+
+
+
     @app.route("/survey/<int:SurveyId>/results")
     @LoginRequired
     def results(SurveyId):
         """结果统计页。
-
         这里统计整体回收情况；每道题的详细统计交给 stats.CollectStats。
         """
+        
         survey = GetSurveyOr404(SurveyId)
         if survey is None or not CanManage(survey):
             flash("无权查看该问卷结果。")
@@ -482,20 +502,27 @@ def RegisterRoutes(app):
             RecoveryRate=RecoveryRate,
         )
 
+
     @app.route("/survey/<int:SurveyId>/export.csv")
     @LoginRequired
     def ExportCsvFile(SurveyId):
-        """导出 CSV 文件。"""
+        """导出 CSV 文件。
+        """
+        
         survey = GetSurveyOr404(SurveyId)
         if survey is None or not CanManage(survey):
             flash("无权导出该问卷。")
             return redirect(url_for("surveys"))
         return BuildCsvResponse(SurveyId)
 
+
+
     @app.route("/survey/<int:SurveyId>/export.xlsx")
     @LoginRequired
     def ExportXlsxFile(SurveyId):
-        """导出 Excel 文件。"""
+        """导出 Excel 文件。
+        """
+        
         survey = GetSurveyOr404(SurveyId)
         if survey is None or not CanManage(survey):
             flash("无权导出该问卷。")
@@ -505,9 +532,13 @@ def RegisterRoutes(app):
             return redirect(url_for("results", SurveyId=SurveyId))
         return BuildXlsxResponse(SurveyId)
 
+
+
     @app.route("/s/<slug>/qr.png")
     def QrCode(slug):
-        """生成问卷填写链接二维码。"""
+        """生成问卷填写链接二维码。
+        """
+
         survey = GetDb().execute("SELECT * FROM surveys WHERE slug = ?", (slug,)).fetchone()
         if survey is None:
             flash("问卷不存在。")
@@ -522,7 +553,11 @@ def RegisterRoutes(app):
         FileObj.seek(0)
         return send_file(FileObj, mimetype="image/png")
 
+
+
     @app.context_processor
     def InjectHelpers():
-        """给所有模板注入可直接调用的辅助函数。"""
+        """给所有模板注入可直接调用的辅助函数。
+        """
+        
         return {"AvailabilityMessage": AvailabilityMessage}
